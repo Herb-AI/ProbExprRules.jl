@@ -1,0 +1,4 @@
+name = "ProbExprRules"
+uuid = "2b5a8a11-586a-428c-acad-cad2bbaa23bf"
+authors = ["Sebastijan Dumancic <sebastijan.dumancic@gmail.com>"]
+version = "0.1.0"
