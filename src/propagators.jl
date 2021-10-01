@@ -2,7 +2,7 @@
 
 function propagate_constraints_index(grammar::ContextSensitiveGrammar, context::GrammarContext, rules::Vector{Int}, probs::Vector{Float64})
 	domain_internal = deepcopy(rules)
-	probs_internal = deepcopy(rules)
+	probs_internal = deepcopy(probs)
 
 	for propagator in grammar.constraints 
 		indices = ExprRules.propagate_index(propagator, context, domain_internal)
