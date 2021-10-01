@@ -22,6 +22,7 @@ export	RuleNode,
 	ProbabilisticGrammar,
 	probabilities,
 	getprob,
+	addconstraint!
 
 	nonterminals,
 	return_type,

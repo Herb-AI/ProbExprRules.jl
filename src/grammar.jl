@@ -67,6 +67,16 @@ function uniform!(pcfg::ProbabilisticGrammar)
 end
 
 
+"""
+	Adds constraint to the probabilistic grammar, if defined over ContextSensitiveGrammar as a base
+"""
+function addconstraint!(g::ProbabilisticGrammar, c::Constraint)
+	if isa(g.grammar, ContextSensitiveGrammar)
+		addconstraint!(g.grammar, c)
+		g
+	else
+		error("Constraints can be addeed only to ContextSensitiveGrammar (not $(typeof(g.grammar)))")
+end
 
 
 function Base.show(io::IO, pg::ProbabilisticGrammar)

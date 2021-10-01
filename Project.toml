@@ -1,7 +1,7 @@
 name = "ProbExprRules"
 uuid = "2b5a8a11-586a-428c-acad-cad2bbaa23bf"
 authors = ["Sebastijan Dumancic <sebastijan.dumancic@gmail.com>"]
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 ExprRules = "e7058ba0-a568-556c-b31a-209ee9d855a8"
