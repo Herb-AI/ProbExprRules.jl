@@ -4,6 +4,7 @@ const ProbType = Dict{Symbol,Vector{Float64}}
 struct ProbabilisticGrammar <: Grammar
     grammar::Grammar
     probs::ProbType
+    rule_to_prob::Dict{Int,Float64}
 end
 
 """
@@ -11,11 +12,30 @@ end
 """
 function ProbabilisticGrammar(grammar::Grammar) 
 	probs = ProbType() 
+	prob_dict = Dict{Int, Float64}()
 	for nt in ExprRules.nonterminals(grammar)
 	    n = length(grammar[nt])
 	    probs[nt] = ones(Float64, n) / n 
+
+	    for rule in grammar[nt]:
+		prob_dict[rule] = 1/n
+	    end
 	end
-	ProbabilisticGrammar(grammar, probs)
+
+	ProbabilisticGrammar(grammar, probs, prob_dict)
+end
+
+function ProbabilisticGrammar(grammar::Grammar, prob_vector::Vector{Float64})
+	probs = ProbType()
+	for nt in ExprRules.nonterminals(grammar)
+		probs[nt] = prob_vector[grammar[nt]]
+	end
+
+	prob_dict = Dict{Int, Float64}()
+	for (rule, prob) in enumerate(prob_vector)
+		prob_dict[rule] = prob
+	end
+	ProbabilisticGrammar(grammar, probs, prob_dict)
 end
 
 probabilities(pcfg::ProbabilisticGrammar, typ::Symbol) = pcfg.probs[typ]
@@ -50,10 +70,15 @@ end
 	Returns the probability of the rule specified by the index
 """
 function getprob(pg::ProbabilisticGrammar, rule_index::Int)
-	rule_type = return_type(pg, rule_index)
-	probs_of_type = probabilities(pg, rule_type)
-	index = indexin(rule_index, pg.grammar[rule_type])
-	return probs_of_type[index]
+	return pg.rule_to_prob[rule_index]
+end
+
+function getprob(pg::ProbabilisticGrammar, rule::RuleNode)
+	if has_children(rule)
+		return getprob(pg, rule.ind) * reduce((acc, x) -> acc * x, [getprob(pg, c) for c in rule.children])
+	else
+		return getprob(pg, rule.ind)
+	end
 end
 
 
@@ -76,6 +101,7 @@ function addconstraint!(g::ProbabilisticGrammar, c::Constraint)
 		g
 	else
 		error("Constraints can be addeed only to ContextSensitiveGrammar (not $(typeof(g.grammar)))")
+	end
 end
 
 
