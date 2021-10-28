@@ -17,7 +17,7 @@ function ProbabilisticGrammar(grammar::Grammar)
 	    n = length(grammar[nt])
 	    probs[nt] = ones(Float64, n) / n 
 
-	    for rule in grammar[nt]:
+	    for rule in grammar[nt]
 		prob_dict[rule] = 1/n
 	    end
 	end
@@ -75,7 +75,7 @@ end
 
 function getprob(pg::ProbabilisticGrammar, rule::RuleNode)
 	if has_children(rule)
-		return getprob(pg, rule.ind) * reduce((acc, x) -> acc * x, [getprob(pg, c) for c in rule.children])
+		return getprob(pg, rule.ind) * reduce((acc, x) -> acc * x, [getprob(pg, c) for c in rule.children]; init=1.0)
 	else
 		return getprob(pg, rule.ind)
 	end
@@ -103,6 +103,18 @@ function addconstraint!(g::ProbabilisticGrammar, c::Constraint)
 		error("Constraints can be addeed only to ContextSensitiveGrammar (not $(typeof(g.grammar)))")
 	end
 end
+
+
+"""
+	Returns true if the probabilistic grammar wraps a context sensitive expr grammar
+"""
+is_contextsensitive(pg::ProbabilisticGrammar) = isa(pg.grammar, ContextSensitiveGrammar)
+
+
+"""
+	Returns true if the probabilistic gramar wraps a context free expr grammar
+"""
+is_contextfree(pg::ProbabilisticGrammar) = isa(pg.grammar, ContextFreeGrammar)
 
 
 function Base.show(io::IO, pg::ProbabilisticGrammar)

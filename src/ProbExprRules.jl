@@ -3,14 +3,21 @@ module ProbExprRules
 using ExprRules
 using LinearAlgebra
 using StatsBase
+using DataStructures
 
+include("utils.jl")
 include("grammar.jl")
 include("propagators.jl")
+include("context.jl")
+include("iterators.jl")
 include("sampling.jl")
 
 export	RuleNode,
 	@cfgrammar,
 	@csgrammar,
+
+	has_children,
+	is_complete,
 
 	Constraint,
         ValidatorConstraint,
@@ -22,7 +29,9 @@ export	RuleNode,
 	ProbabilisticGrammar,
 	probabilities,
 	getprob,
-	addconstraint!
+	addconstraint!,
+	is_contextfree,
+	is_contextsensitive,
 
 	nonterminals,
 	return_type,
@@ -34,7 +43,8 @@ export	RuleNode,
 	contains_returntype,
 	mindepth_map,
 
-	uniform!
+	uniform!,
+	ProbabilisticIterator
 
 
 end # module
