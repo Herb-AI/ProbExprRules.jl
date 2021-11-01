@@ -27,76 +27,115 @@ end
 		-> if context sensitive, filters the rules to satisfy constraints and sorts them according to their probability (decreasing)
 """
 function _prepare_child_rules(grammar::Grammar, rule_type::Symbol, context::Union{Nothing,GrammarContext})
-	child_rules = [x for x in grammar[rule_type]]  # select all applicable rules
+	child_rules = [x for x in grammar[rule_type]]  # select all applicable rules; needs to be copied so that it can be filtered later and not modify the grammar
+	probs = probabilities(grammar, rule_type)
 
 	if is_contextsensitive(grammar)
-		probs = probabilities(grammar, c)
-
+		# filter child rules and probabilities
 		child_rules, probs = propagate_constraints_index(grammar, context, child_rules, probs)  # filter out those that violate constraints
-			
-		# sort the rules according to their probability
-		child_rules = sort(zip(child_rules, probs), by = x -> x[2], rev=true)
-		child_rules = map(x -> x[1], child_rules)
-
-		return (child_rules, sort(probs, rev=true))
-	else
-		return (child_rules, Array{Float64}())
 	end
-	
-	
+
+	# sort the rules according to their probability
+	child_rules = sort(collect(zip(child_rules, probs)), by = x -> x[2], rev=true)
+	child_rules = map(x -> x[1], child_rules)
+
+	return (child_rules, sort(probs, rev=true))	
 end
 
 
 """
 	Expend a partial expression by expanding every non-terminal for exactly one derivation
+		 -> only returns the probability of the added parts; the correct probability of the entire expression should be handled externally
 
 """
-function _expand_partial(node::RuleNode, grammar::ProbabilisticGrammar, init_prob::Float64, context::Union{Nothing, GrammarContext} )
-	prob_to_return = init_prob 
-	expansion_pool = PriorityQueue{RuleNode, Float64}()
-	expansion_pool[node] = -1.0
+function _expand_partial(node::RuleNode, grammar::ProbabilisticGrammar, max_depth::Int, context::Union{Nothing, GrammarContext} )
+	expansion_pool = PriorityQueue{RuleNode, Float64}(Base.Order.Reverse)
+	expansion_pool[node] = 1.0
 
-	if isterminal(grammar, node)
+	if max_depth <= 1
+		# if we are out of depth, return empty
+		return PriorityQueue{RuleNode,Float64}()
+	elseif isterminal(grammar, node)
 		# if the node is terminal, just return the node
-		return node
-	elseif isempty(node.childen)
+		pq = PriorityQueue{RuleNode,Float64}(Base.Order.Reverse)
+		# pq[node] = 1.0
+		return pq
+	elseif isempty(node.children)
 		# if the node is non-terminal and has no children 
 		# 	-> construct a RuleNode for each possible extension
 		for (child_index, c) in enumerate(child_types(grammar, node))
 			# new dict to hold further expanded candidates
-			new_pool = PriorityQueue{RuleNode, Float64}()
+			new_pool = PriorityQueue{RuleNode, Float64}(Base.Order.Reverse)
 			
-			# go over every partial expansion (containing expansions to the left) in the expansion expansion_pool
-			for pe in keys(expansion_pool)
+			# go over every partial expansion (containing expansions to the children on the left) in the expansion_pool
+			for (pe, prob) in expansion_pool
 				# prepare context
 				#	-> replace the node indicated by the location with pe
+				#	-> do that only if it is necessary, that is, if `new_context` is not `nothing`
 				new_context = _prepare_context(grammar, context)
-				swap_node(new_context.originalExpr, pe, new_context.nodeLocation)
 
-				# add node location to the `nodeLocation`; needed to propagate constraints
-				push!(new_context.nodeLocation, child_index)
+				if new_context !== nothing
+					# do this only if using context-sensitive grammar
+					swap_node(new_context.originalExpr, pe, new_context.nodeLocation)
 
+					# add node location to the `nodeLocation`; needed to propagate constraints
+					push!(new_context.nodeLocation, child_index)
+				end
+				
 				child_rules, probs = _prepare_child_rules(grammar, c, new_context)
 
 				# construct all possible expansions of the pe (adding a child)
 				for (ch, pr) in zip(child_rules, probs)
 					new_node = deepcopy(pe)
-					push!(new_node.children, ch)
+					push!(new_node.children, RuleNode(ch))
 
 					# add new node to the pool and adjust the probability (prob of new child)
-					new_pool[new_node] = expansion_pool[pe] * pr  
+					new_pool[new_node] = prob * pr  
 				end
 			end
 
 			# newly constructed candidates become new expansion pool
 			expansion_pool = new_pool
 		end
-
 	else
 		# if the node is non-terminal and has children
 		# 	-> recursively get all extensions of each child and combine them
+		for (child_index, c) in enumerate(child_types(grammar, node))
+			# new dict to hold further expansions
+			new_pool = PriorityQueue{RuleNode, Float64}()
 
+			# go over all existing expansions in expansion_pool (containing expansions of the childred to the left)
+			for (elem, prob) in expansion_pool
+				# prepare context
+				#   -> replace the node indicated by the location with pe 
+				#   -> do this only if necessary, that is, if `new_context` is not `nothing`
+				new_context = _prepare_context(grammar, context)
+
+				if new_context !== nothing
+					swap_node(new_context.originalExpr, pe, new_context.nodeLocation)
+
+					# add node location to the `node location`; needed to propagate constraints 
+					push!(new_context.nodeLocation, child_index)
+				end
+
+				#build up child expansions
+				child_expansions = _expand_partial(node.children[child_index], grammar, max_depth-1, new_context)
+
+				# replace with new child
+				for (ch, ch_prob) in child_expansions
+					new_node = deepcopy(elem)
+					new_node.children[child_index] = ch
+
+					# add new node to the pool and adjust the probability 
+					new_pool[new_node] = prob * ch_prob
+				end
+			end
+
+			expansion_pool = new_pool
+		end
 	end
+
+	return expansion_pool
 
 end
 
@@ -334,7 +373,6 @@ Base.eltype(::ProbabilisticIterator) = (RuleNode, Float64)
 
 
 function Base.iterate(iter::ProbabilisticIterator)
-    
 	grammar, sym, max_depth = iter.grammar, iter.sym, iter.max_depth
     
 	# propagate constraints on the root node 
@@ -353,90 +391,152 @@ function Base.iterate(iter::ProbabilisticIterator)
 	else
 		init_context = nothing
 	end
-	#node = RuleNode(grammar[sym][1])
-	node = RuleNode(sym_rules[1])
-	prob = getprob(grammar, sym_rules[1])
-     
-	if isterminal(grammar, node)
-	    return ((deepcopy(node), prob), (node, prob))
-	else
-	
-	    if is_contextsensitive(grammar)
-	    	context = GrammarContext(node)
-	    else
-		context = nothing
-	    end
 
-	    node, prob, worked =  ProbExprRules._next_state!(node, grammar, max_depth, prob, context)
-
-	    while !worked
-		# increment root's rule
-		rules = [x for x in grammar[sym]]
-		probs = probabilities(grammar, sym)
-
-		if is_contextsensitive(grammar)
-			rules, probs = propagate_constraints_index(grammar, init_context, rules, probs) # propagate constraints on the root node
-			
-			# sort 
-			rules = sort(zip(rules, probs), by = x -> x[2], rev=true)
-			rules = map(x -> x[1], rules)
-		end
-
-		i = something(findfirst(isequal(node.ind), rules), 0)
-		if i < length(rules)
-		    node, worked = RuleNode(rules[i+1]), true
-		    prob = getprob(grammar, rules[i+1])
-		    if !isterminal(grammar, node)
-			node, prob, worked = _next_state!(node, grammar, max_depth, prob, context)
-		    end
-		else
-		    break
-		end
-	    end
-	    return worked ? ((deepcopy(node), prob), (node, prob)) : nothing
+	# form the queue of candidates
+	pq = PriorityQueue{RuleNode, Float64}(Base.Order.Reverse)
+	for r in sym_rules
+		pq[RuleNode(r)] = getprob(grammar, r)
 	end
+
+	return iterate(iter, pq)
+
 end
 
 
-function Base.iterate(iter::ProbabilisticIterator, state_tuple::Tuple{RuleNode,Float64})
-	grammar, max_depth = iter.grammar, iter.max_depth
-	state, init_prob = state_tuple
 
-	if isa(iter.grammar.grammar, ContextSensitiveGrammar)
-		context = GrammarContext(state)
-	else
-		context = nothing
-	end
-
-	node, prob, worked = _next_state!(state, grammar, max_depth, init_prob, context)
+# function Base.iterate(iter::ProbabilisticIterator)
     
-	while !worked
-	    # increment root's rule
-	    rules = [x for x in grammar[iter.sym]]
-	    probs = probabilities(grammar, iter.sym)
+# 	grammar, sym, max_depth = iter.grammar, iter.sym, iter.max_depth
+    
+# 	# propagate constraints on the root node 
+# 	sym_rules = [x for x in grammar[sym]]
+# 	probs = probabilities(grammar, sym)
 
-	    if isa(iter.grammar.grammar, ContextSensitiveGrammar)
-	    	init_node = RuleNode(0)  # needed for propagating constraints on the root node 
-    	    	init_context = GrammarContext(init_node)
+# 	if isa(iter.grammar.grammar, ContextSensitiveGrammar)
+# 		init_node = RuleNode(0)  # needed for propagating constraints on the root node 
+# 		init_context = GrammarContext(init_node)
 
-	    	rules, probs = propagate_contraints_index(grammar, init_context, rules, probs)
-		    
-		# sort 
-		rules = sort(zip(rules, probs), by = x -> x[2], rev=true)
-		rules = map(x -> x[1], rules)
-	    end
+# 		sym_rules, probs = propagate_constraints_index(grammar, init_context, sym_rules, probs)
 
-	    i = something(findfirst(isequal(node.ind), rules), 0)
-	    if i < length(rules)
-		node, worked = RuleNode(rules[i+1]), true
-		prob = getprob(grammar, rules[i+1])
-		if !isterminal(grammar, node)
-		    context = GrammarContext(node)
-		    node, prob, worked = _next_state!(node, grammar, max_depth, prob, context)
+# 		# sort 
+# 		sym_rules = sort(zip(sym_rules, probs), by = x -> x[2], rev=true)
+# 		sym_rules = map(x -> x[1], sym_rules)
+# 	else
+# 		init_context = nothing
+# 	end
+# 	#node = RuleNode(grammar[sym][1])
+# 	node = RuleNode(sym_rules[1])
+# 	prob = getprob(grammar, sym_rules[1])
+     
+# 	if isterminal(grammar, node)
+# 	    return ((deepcopy(node), prob), (node, prob))
+# 	else
+	
+# 	    if is_contextsensitive(grammar)
+# 	    	context = GrammarContext(node)
+# 	    else
+# 		context = nothing
+# 	    end
+
+# 	    node, prob, worked =  ProbExprRules._next_state!(node, grammar, max_depth, prob, context)
+
+# 	    while !worked
+# 		# increment root's rule
+# 		rules = [x for x in grammar[sym]]
+# 		probs = probabilities(grammar, sym)
+
+# 		if is_contextsensitive(grammar)
+# 			rules, probs = propagate_constraints_index(grammar, init_context, rules, probs) # propagate constraints on the root node
+			
+# 			# sort 
+# 			rules = sort(zip(rules, probs), by = x -> x[2], rev=true)
+# 			rules = map(x -> x[1], rules)
+# 		end
+
+# 		i = something(findfirst(isequal(node.ind), rules), 0)
+# 		if i < length(rules)
+# 		    node, worked = RuleNode(rules[i+1]), true
+# 		    prob = getprob(grammar, rules[i+1])
+# 		    if !isterminal(grammar, node)
+# 			node, prob, worked = _next_state!(node, grammar, max_depth, prob, context)
+# 		    end
+# 		else
+# 		    break
+# 		end
+# 	    end
+# 	    return worked ? ((deepcopy(node), prob), (node, prob)) : nothing
+# 	end
+# end
+
+function Base.iterate(iter::ProbabilisticIterator, state::PriorityQueue{RuleNode,Float64})
+	grammar, max_depth = iter.grammar, iter.max_depth
+	if isempty(state)
+		return nothing
+	else
+		expr, prob = dequeue_pair!(state)
+
+		# keep dequeueing until the returned expr is terminal
+		while !is_complete(grammar, expr) && !isempty(state)
+			context = GrammarContext(expr)
+			expansions = _expand_partial(expr, grammar, max_depth, context)
+
+			# add expansions to state 
+			for (node, pr) in expansions
+				state[node] = pr * prob
+			end
+
+			# # check if the state is empty
+			# if isempty(state)
+			# 	return nothing
+			# end
+
+			# pop the priority node again
+			expr, prob = dequeue_pair!(state)
 		end
-	    else
-		break
-	    end
+
+		return ((expr, prob), state)
 	end
-	return worked ? ((deepcopy(node), prob), (node, prob)) : nothing
 end
+
+# function Base.iterate(iter::ProbabilisticIterator, state_tuple::Tuple{RuleNode,Float64})
+# 	grammar, max_depth = iter.grammar, iter.max_depth
+# 	state, init_prob = state_tuple
+
+# 	if isa(iter.grammar.grammar, ContextSensitiveGrammar)
+# 		context = GrammarContext(state)
+# 	else
+# 		context = nothing
+# 	end
+
+# 	node, prob, worked = _next_state!(state, grammar, max_depth, init_prob, context)
+    
+# 	while !worked
+# 	    # increment root's rule
+# 	    rules = [x for x in grammar[iter.sym]]
+# 	    probs = probabilities(grammar, iter.sym)
+
+# 	    if isa(iter.grammar.grammar, ContextSensitiveGrammar)
+# 	    	init_node = RuleNode(0)  # needed for propagating constraints on the root node 
+#     	    	init_context = GrammarContext(init_node)
+
+# 	    	rules, probs = propagate_contraints_index(grammar, init_context, rules, probs)
+		    
+# 		# sort 
+# 		rules = sort(zip(rules, probs), by = x -> x[2], rev=true)
+# 		rules = map(x -> x[1], rules)
+# 	    end
+
+# 	    i = something(findfirst(isequal(node.ind), rules), 0)
+# 	    if i < length(rules)
+# 		node, worked = RuleNode(rules[i+1]), true
+# 		prob = getprob(grammar, rules[i+1])
+# 		if !isterminal(grammar, node)
+# 		    context = GrammarContext(node)
+# 		    node, prob, worked = _next_state!(node, grammar, max_depth, prob, context)
+# 		end
+# 	    else
+# 		break
+# 	    end
+# 	end
+# 	return worked ? ((deepcopy(node), prob), (node, prob)) : nothing
+# end

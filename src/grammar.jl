@@ -1,8 +1,8 @@
 
 const ProbType = Dict{Symbol,Vector{Float64}}
 
-struct ProbabilisticGrammar <: Grammar
-    grammar::Grammar
+struct ProbabilisticGrammar <: ExprRules.Grammar
+    grammar::ExprRules.Grammar
     probs::ProbType
     rule_to_prob::Dict{Int,Float64}
 end
