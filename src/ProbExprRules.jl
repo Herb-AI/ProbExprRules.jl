@@ -16,9 +16,6 @@ export	RuleNode,
 	@cfgrammar,
 	@csgrammar,
 
-	has_children,
-	is_complete,
-
 	Constraint,
     ValidatorConstraint,
     PropagatorConstraint,
@@ -42,6 +39,7 @@ export	RuleNode,
 	nchildren,
 	contains_returntype,
 	mindepth_map,
+	iscomplete
 
 	uniform!,
 	ProbabilisticIterator

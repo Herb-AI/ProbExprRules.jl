@@ -476,7 +476,7 @@ function Base.iterate(iter::ProbabilisticIterator, state::PriorityQueue{RuleNode
 		expr, prob = dequeue_pair!(state)
 
 		# keep dequeueing until the returned expr is terminal
-		while !is_complete(grammar, expr) && !isempty(state)
+		while !iscomplete(grammar, expr) && !isempty(state)
 			context = GrammarContext(expr)
 			expansions = _expand_partial(expr, grammar, max_depth, context)
 

@@ -65,6 +65,7 @@ for func in [:contains_returntype]
 	eval(:($func(node::RuleNode, pg::ProbabilisticGrammar, sym::Symbol, maxdepth::Int=typemax(Int)) = ExprRules.$func(node, pg.grammar, sym, maxdepth)))
 end
 
+iscomplete(grammar::ProbabilisticGrammar, expr::RuleNode) = ExprRules.iscomplete(grammar.grammar, expr)
 
 """
 	Returns the probability of the rule specified by the index

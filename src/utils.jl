@@ -1,10 +1,8 @@
-
-has_children(rule::RuleNode) = !isempty(rule.children)
-
 """
-	Checks if the expression is complete (= all leafs are terminals)
+    iscomplete(grammar::Grammar, node::RuleNode)
+    Returns true if the expression given by the node is complete expression, i.e., all leaves are terminal symbols
 """
-function is_complete(grammar::Grammar, node::RuleNode) 
+function iscomplete(grammar::Grammar, node::RuleNode) 
 	if isterminal(grammar, node)
 		return true
 	elseif isempty(node.children)
